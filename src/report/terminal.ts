@@ -63,6 +63,15 @@ export function formatTerminal(analysis: Analysis): string {
   if (analysis.advisoryWarning) {
     lines.push(`${c.yellow}advisory: ${analysis.advisoryWarning}${c.reset}`);
   }
+  if (analysis.lowHistory) {
+    lines.push(
+      `${c.yellow}low-history: fewer than 5 scored pairs; outlier z omitted, silent-fix candidates disabled${c.reset}`,
+    );
+  }
+  if (analysis.incomplete) {
+    const why = analysis.incompleteReasons.length ? analysis.incompleteReasons.join("; ") : "unpack incomplete";
+    lines.push(`${c.yellow}incomplete: ${why}${c.reset}`);
+  }
   lines.push("");
 
   const ranked = [...analysis.releases].sort((a, b) => a.rank - b.rank);
@@ -72,7 +81,7 @@ export function formatTerminal(analysis: Analysis): string {
     date: dateOnly(r.published),
     files: String(r.filesChanged),
     delta: fmt(r.hardeningDelta),
-    outlier: fmt(r.outlierScore),
+    outlier: r.outlierScore === null ? "n/a" : fmt(r.outlierScore),
     status: statusText(r),
     signals: r.topSignals.join(", ") || "—",
     raw: r,

@@ -8,7 +8,7 @@ describe("tar + integrity", () => {
       { name: "package.json", content: '{"name":"x","version":"1.0.0"}\n' },
       { name: "index.js", content: "module.exports = 1;\n" },
     ]);
-    const entries = unpackTarGz(tgz);
+    const { entries } = unpackTarGz(tgz);
     const names = entries.map((e) => e.name).sort();
     expect(names).toEqual(["index.js", "package.json"]);
     const sri = integrityOf(tgz);

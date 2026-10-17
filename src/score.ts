@@ -1,4 +1,33 @@
-import type { DiffResult, ScoreResult, SignalHit } from "./types.js";
+import type { DiffResult, FormulaCompare, ScoreResult, SignalHit } from "./types.js";
+
+/**
+ * Size penalty used for Hardening Delta.
+ * Compared against signed-delta / sqrt(1 + changedLines) on known GHSA rows;
+ * see docs/method.md. Winner is whichever ranks those patched releases better.
+ */
+export type HardeningFormula = "log2-clamped" | "sqrt-signed" | "sqrt-clamped";
+export const HARDENING_FORMULA: HardeningFormula = "sqrt-signed";
+
+export function formulaCompare(rawClamped: number, rawSigned: number, changedLines: number): FormulaCompare {
+  const changed = Math.max(0, changedLines);
+  const log2Clamped = rawClamped <= 0 ? 0 : round4(rawClamped / Math.log2(2 + changed));
+  const sqrtSigned = round4(rawSigned / Math.sqrt(1 + changed));
+  const sqrtClamped = round4(rawClamped / Math.sqrt(1 + changed));
+  return {
+    rawClamped: round4(rawClamped),
+    rawSigned: round4(rawSigned),
+    changedLines: changed,
+    log2Clamped,
+    sqrtSigned,
+    sqrtClamped,
+  };
+}
+
+export function hardeningDeltaFromCompare(cmp: FormulaCompare, formula: HardeningFormula = HARDENING_FORMULA): number {
+  if (formula === "sqrt-signed") return cmp.sqrtSigned;
+  if (formula === "sqrt-clamped") return cmp.sqrtClamped;
+  return cmp.log2Clamped;
+}
 
 export interface HardeningRule {
   id: string;
@@ -239,20 +268,24 @@ function testFileBonus(paths: string[], addedLines: string[]): number {
 }
 
 /**
- * Hardening Delta H = raw / log2(2 + added + removed)
- * raw = sum_k weight_k * max(0, hits_added_k - 0.5 * hits_removed_k) plus small extras.
+ * Hardening Delta uses signed-delta / sqrt(1 + changedLines) (HARDENING_FORMULA).
+ * Compared with raw / log2(2 + changed) on known GHSA rows; see docs/method.md.
+ * rawSigned = sum_k weight_k * (hits_added_k - 0.5 * hits_removed_k) plus extras.
  */
 export function scoreDiff(diff: DiffResult): ScoreResult {
   const signals: SignalHit[] = [];
-  let raw = 0;
+  let rawClamped = 0;
+  let rawSigned = 0;
 
   for (const rule of HARDENING_RULES) {
     const add = hitsOn(diff.addedSourceLines, rule);
     const rem = hitsOn(diff.removedSourceLines, rule);
-    const net = Math.max(0, add.hits - 0.5 * rem.hits);
+    const signed = add.hits - 0.5 * rem.hits;
+    rawSigned += rule.weight * signed;
+    const net = Math.max(0, signed);
     if (net <= 0) continue;
     const contribution = rule.weight * net;
-    raw += contribution;
+    rawClamped += contribution;
     signals.push({
       id: rule.id,
       label: rule.label,
@@ -265,7 +298,8 @@ export function scoreDiff(diff: DiffResult): ScoreResult {
 
   const tighten = limitTightenBonus(diff.addedSourceLines, diff.removedSourceLines);
   if (tighten > 0) {
-    raw += tighten;
+    rawClamped += tighten;
+    rawSigned += tighten;
     signals.push({
       id: "limit-tighten",
       label: "tightened numeric limit",
@@ -278,7 +312,8 @@ export function scoreDiff(diff: DiffResult): ScoreResult {
 
   const dep = depBumpScore(diff.packageJsonRemoved, diff.packageJsonAdded);
   if (dep > 0) {
-    raw += dep;
+    rawClamped += dep;
+    rawSigned += dep;
     signals.push({
       id: "dep-bump",
       label: "dependency patch/minor bump",
@@ -291,7 +326,8 @@ export function scoreDiff(diff: DiffResult): ScoreResult {
 
   const cl = changelogScore(diff.changelogAdded);
   if (cl.raw > 0) {
-    raw += cl.raw;
+    rawClamped += cl.raw;
+    rawSigned += cl.raw;
     signals.push({
       id: "changelog-security",
       label: "changelog security mention",
@@ -304,7 +340,8 @@ export function scoreDiff(diff: DiffResult): ScoreResult {
 
   const testBonus = testFileBonus(diff.addedSourcePaths, diff.addedSourceLines);
   if (testBonus > 0 && TEST_KEYWORDS.test(diff.addedSourceLines.join("\n"))) {
-    raw += testBonus;
+    rawClamped += testBonus;
+    rawSigned += testBonus;
     signals.push({
       id: "test-security",
       label: "tests mention security keywords",
@@ -317,13 +354,15 @@ export function scoreDiff(diff: DiffResult): ScoreResult {
 
   signals.sort((a, b) => b.contribution - a.contribution || (a.id < b.id ? -1 : 1));
   const size = diff.linesAdded + diff.linesRemoved;
-  const hardeningDelta = raw <= 0 ? 0 : round4(raw / Math.log2(2 + size));
+  const cmp = formulaCompare(rawClamped, rawSigned, size);
   return {
-    raw: round4(raw),
-    hardeningDelta,
+    raw: cmp.rawClamped,
+    rawSigned: cmp.rawSigned,
+    hardeningDelta: hardeningDeltaFromCompare(cmp),
     linesAdded: diff.linesAdded,
     linesRemoved: diff.linesRemoved,
     signals,
+    formulaCompare: cmp,
   };
 }
 

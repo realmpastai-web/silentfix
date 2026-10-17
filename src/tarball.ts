@@ -1,11 +1,19 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { spawnSync } from "node:child_process";
 import { unpackedPath as unpackedDir, tarballPath as tgzPath } from "./cache.js";
 import { verifyIntegrity } from "./integrity.js";
-import { unpackTarGzToDir } from "./tar.js";
+import { unpackTarGzToDir, type UnpackResult } from "./tar.js";
 import { httpGetBuffer } from "./http.js";
 import type { DistMeta } from "./types.js";
+
+const MARKER_VERSION = 2;
+
+export interface UnpackMeta {
+  incomplete: boolean;
+  reasons: string[];
+  skippedSymlinks: number;
+  skippedHardlinks: number;
+}
 
 export async function ensureTarball(
   packageName: string,
@@ -38,14 +46,32 @@ export async function ensureTarball(
   return path;
 }
 
-function unpackWithTarCli(tgz: string, dest: string): boolean {
-  mkdirSync(dest, { recursive: true });
-  const r = spawnSync(
-    "tar",
-    ["-xzf", tgz, "-C", dest, "--strip-components=1", "--no-absolute-filenames"],
-    { encoding: "utf8" },
-  );
-  return r.status === 0;
+function markerPath(dest: string): string {
+  return `${dest}/.silentfix-unpacked`;
+}
+
+function parseMarker(raw: string): UnpackMeta | null {
+  try {
+    const j = JSON.parse(raw) as { v?: number; incomplete?: boolean; reasons?: string[]; skippedSymlinks?: number; skippedHardlinks?: number };
+    if (j.v !== MARKER_VERSION) return null;
+    return {
+      incomplete: Boolean(j.incomplete),
+      reasons: Array.isArray(j.reasons) ? j.reasons.map(String) : [],
+      skippedSymlinks: Number(j.skippedSymlinks) || 0,
+      skippedHardlinks: Number(j.skippedHardlinks) || 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function metaFromResult(result: UnpackResult): UnpackMeta {
+  return {
+    incomplete: result.incomplete,
+    reasons: result.reasons,
+    skippedSymlinks: result.skippedSymlinks,
+    skippedHardlinks: result.skippedHardlinks,
+  };
 }
 
 export function ensureUnpacked(
@@ -54,19 +80,40 @@ export function ensureUnpacked(
   tgzFile: string,
   cacheDir: string,
   log?: (m: string) => void,
-): string {
+): { dest: string; meta: UnpackMeta } {
   const dest = unpackedDir(cacheDir, packageName, version);
-  const marker = `${dest}/.silentfix-unpacked`;
+  const marker = markerPath(dest);
   if (existsSync(marker)) {
-    log?.(`cache hit unpacked ${packageName}@${version}`);
-    return dest;
+    const meta = parseMarker(readFileSync(marker, "utf8"));
+    if (meta) {
+      log?.(`cache hit unpacked ${packageName}@${version}`);
+      return { dest, meta };
+    }
+  }
+  if (existsSync(dest)) {
+    rmSync(dest, { recursive: true, force: true });
   }
   mkdirSync(dest, { recursive: true });
-  const ok = unpackWithTarCli(tgzFile, dest);
-  if (!ok) {
-    const buf = readFileSync(tgzFile);
-    unpackTarGzToDir(buf, dest);
+  const buf = readFileSync(tgzFile);
+  let result: UnpackResult;
+  try {
+    result = unpackTarGzToDir(buf, dest);
+  } catch (err) {
+    rmSync(dest, { recursive: true, force: true });
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(msg);
   }
-  writeFileSync(marker, `${packageName}@${version}\n`);
-  return dest;
+  const meta = metaFromResult(result);
+  writeFileSync(
+    marker,
+    `${JSON.stringify({
+      v: MARKER_VERSION,
+      id: `${packageName}@${version}`,
+      incomplete: meta.incomplete,
+      reasons: meta.reasons,
+      skippedSymlinks: meta.skippedSymlinks,
+      skippedHardlinks: meta.skippedHardlinks,
+    })}\n`,
+  );
+  return { dest, meta };
 }

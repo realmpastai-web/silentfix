@@ -16,5 +16,6 @@ describe("outlier score", () => {
   it("combined score boosts positive outliers only", () => {
     expect(combinedScore(2, 4)).toBeGreaterThan(combinedScore(2, 0));
     expect(combinedScore(2, -3)).toBe(2);
+    expect(combinedScore(2, null)).toBe(2);
   });
 });

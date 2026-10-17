@@ -42,5 +42,6 @@ describe("advisory matching", () => {
     expect(classifyStatus("1.0.1", map, 5, 3, 3).status).toBe("silent-fix candidate");
     expect(classifyStatus("1.0.1", map, 0.1, 0.2, 3).status).toBe("none");
     expect(classifyStatus("1.0.1", map, 5, 3, 400).status).toBe("none");
+    expect(classifyStatus("1.0.1", map, 5, null, 3).status).toBe("none");
   });
 });

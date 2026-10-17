@@ -74,12 +74,23 @@ export interface DiffResult {
   changelogAdded: string[];
 }
 
+export interface FormulaCompare {
+  rawClamped: number;
+  rawSigned: number;
+  changedLines: number;
+  log2Clamped: number;
+  sqrtSigned: number;
+  sqrtClamped: number;
+}
+
 export interface ScoreResult {
   raw: number;
+  rawSigned: number;
   hardeningDelta: number;
   linesAdded: number;
   linesRemoved: number;
   signals: SignalHit[];
+  formulaCompare: FormulaCompare;
 }
 
 export interface GhsaVulnerability {
@@ -109,12 +120,15 @@ export interface RankedRelease {
   linesAdded: number;
   linesRemoved: number;
   hardeningDelta: number;
-  outlierScore: number;
+  outlierScore: number | null;
   combinedScore: number;
   advisoryStatus: AdvisoryStatus;
   advisories: MatchedAdvisory[];
   signals: SignalHit[];
   topSignals: string[];
+  incomplete: boolean;
+  skipReasons: string[];
+  formulaCompare?: FormulaCompare;
 }
 
 export interface AnalysisWindow {
@@ -138,6 +152,9 @@ export interface Analysis {
   window: AnalysisWindow;
   advisoriesFetched: boolean;
   advisoryWarning?: string;
+  incomplete: boolean;
+  incompleteReasons: string[];
+  lowHistory: boolean;
   releases: RankedRelease[];
 }
 
@@ -158,4 +175,6 @@ export interface AnalyzeOptions {
   fetchPackument?: (pkg: string) => Promise<Packument>;
   fetchTarball?: (url: string) => Promise<Buffer>;
   fetchAdvisories?: (pkg: string) => Promise<GhsaAdvisory[]>;
+  /** Attach per-release log2 vs sqrt formula numbers (validation / docs). */
+  compareFormulas?: boolean;
 }

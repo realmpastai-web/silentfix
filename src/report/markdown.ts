@@ -31,17 +31,31 @@ export function formatMarkdown(analysis: Analysis): string {
   ].filter(Boolean);
   if (extras.length) lines.push(`Filters: ${extras.join(" · ")}`);
   if (analysis.advisoryWarning) lines.push(`**Advisory warning:** ${analysis.advisoryWarning}`);
+  if (analysis.lowHistory) {
+    lines.push(
+      "**Low-history:** fewer than 5 scored pairs; outlier z is omitted and silent-fix candidates are disabled.",
+    );
+  }
+  if (analysis.incomplete) {
+    const why = analysis.incompleteReasons.length ? analysis.incompleteReasons.join("; ") : "unpack incomplete";
+    lines.push(`**Incomplete:** ${why}`);
+  }
   lines.push("");
   lines.push("| rank | version | date | files | delta | outlier | status | signals |");
   lines.push("| ---: | --- | --- | ---: | ---: | ---: | --- | --- |");
   const ranked = [...analysis.releases].sort((a, b) => a.rank - b.rank);
   for (const r of ranked) {
     const signals = r.topSignals.join(", ") || "—";
+    const z = r.outlierScore === null ? "n/a" : r.outlierScore.toFixed(2);
+    const ver = r.incomplete ? `\`${r.version}\`*` : `\`${r.version}\``;
     lines.push(
-      `| ${r.rank} | \`${r.version}\` | ${dateOnly(r.published)} | ${r.filesChanged} | ${r.hardeningDelta.toFixed(2)} | ${r.outlierScore.toFixed(2)} | ${statusText(r)} | ${signals} |`,
+      `| ${r.rank} | ${ver} | ${dateOnly(r.published)} | ${r.filesChanged} | ${r.hardeningDelta.toFixed(2)} | ${z} | ${statusText(r)} | ${signals} |`,
     );
   }
   lines.push("");
+  if (ranked.some((r) => r.incomplete)) {
+    lines.push("_\\* unpack incomplete (skipped links, entry cap, or gzip bound). See Incomplete above._");
+  }
   lines.push(
     "_Hardening Delta is a heuristic over the tarball diff, not proof of a security fix. See [docs/method.md](docs/method.md)._",
   );

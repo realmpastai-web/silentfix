@@ -45,12 +45,14 @@ export function classifyStatus(
   version: string,
   patched: Map<string, MatchedAdvisory[]>,
   hardeningDelta: number,
-  outlierScore: number,
+  outlierScore: number | null,
   filesChanged = 0,
 ): { status: AdvisoryStatus; advisories: MatchedAdvisory[] } {
   const advisories = patched.get(version) ?? [];
   if (advisories.length > 0) return { status: "advisory-fix", advisories };
   if (
+    outlierScore !== null &&
+    Number.isFinite(outlierScore) &&
     outlierScore >= CANDIDATE_Z &&
     hardeningDelta >= CANDIDATE_H &&
     filesChanged > 0 &&

@@ -28,6 +28,7 @@ export function robustZScores(values: number[]): number[] {
   return values.map((v) => round4((0.6745 * (v - med)) / m));
 }
 
-export function combinedScore(hardeningDelta: number, outlierScore: number): number {
+export function combinedScore(hardeningDelta: number, outlierScore: number | null): number {
+  if (outlierScore === null || !Number.isFinite(outlierScore)) return round4(hardeningDelta);
   return round4(hardeningDelta * (1 + Math.max(0, outlierScore) / 2));
 }

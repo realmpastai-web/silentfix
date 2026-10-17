@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { bagDiff } from "../src/diff.js";
-import { scoreDiff } from "../src/score.js";
+import { hardeningDeltaFromCompare, scoreDiff } from "../src/score.js";
 import type { DiffResult } from "../src/types.js";
 
 function diffFrom(oldSrc: string, newSrc: string): DiffResult {
@@ -76,5 +76,14 @@ module.exports.parsePattern = function (s) { return new RegExp(s + ".*"); };
     const hs = scoreDiff(small).hardeningDelta;
     const hl = scoreDiff(large).hardeningDelta;
     expect(hs).toBeGreaterThan(hl);
+  });
+
+  it("computes log2-clamped and sqrt-signed deltas for the same raw", () => {
+    const guard = 'if (x === "__proto__") return;\n';
+    const d = diffFrom("a\n", `a\n${guard}`);
+    const s = scoreDiff(d);
+    expect(s.hardeningDelta).toBe(hardeningDeltaFromCompare(s.formulaCompare));
+    expect(s.formulaCompare.log2Clamped).not.toBe(s.formulaCompare.sqrtSigned);
+    expect(s.formulaCompare.changedLines).toBe(s.linesAdded + s.linesRemoved);
   });
 });
