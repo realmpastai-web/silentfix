@@ -1,0 +1,45 @@
+{
+  "name": "silentfix",
+  "version": "0.1.0",
+  "description": "Diff consecutive npm releases and flag silent security-fix candidates via a Hardening Delta heuristic.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "silentfix": "dist/cli.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "docs",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "security",
+    "npm",
+    "advisory",
+    "diff",
+    "cli",
+    "silent-fix"
+  ],
+  "devDependencies": {
+    "@types/node": "^20.17.12",
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8"
+  }
+}
