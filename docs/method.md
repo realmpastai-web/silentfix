@@ -32,8 +32,8 @@ Skipped: `node_modules`, VCS dirs, symlinks, source maps, minified JS, `.d.ts`, 
 Unpack (JS, not the system `tar` CLI):
 
 - gzip decompress is bounded at **256 MiB** (`gunzipSync(buf, { maxOutputLength })`). Oversize or corrupt gzip is a **per-version skip** (`gzip output exceeded 256 MiB` / `gzip decompress failed`), not a process crash.
-- PAX `path=` / `linkpath=` records (type `x`/`g`) and GNU `L` longnames are applied to the next entry. Ustar `name`/`prefix` alone truncates paths past 100 bytes and can drop `.js`.
-- Tar headers are capped at **20 000**. Past that, remaining members are not read.
+- PAX `path=` records (type `x`/`g`) and GNU `L` longnames are applied to the next entry. Ustar `name`/`prefix` alone truncates paths past 100 bytes and can drop `.js`.
+- Real tar members are capped at **20 000** (pax `x`/`g` and GNU `L`/`K` metadata headers do not count). Past that, remaining members are not read.
 - Type `2` (symlink) and type `1` (hard link) are not extracted. They are counted.
 
 Any skip, cap, or skipped link sets `incomplete: true` and a list of reasons on the JSON report, the Markdown table, and the terminal header.

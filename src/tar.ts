@@ -7,7 +7,7 @@ const BLOCK = 512;
 /** Decompressed tar may not exceed 256 MiB (gzip-bomb guard). */
 export const MAX_GUNZIP_BYTES = 256 * 1024 * 1024;
 
-/** Stop reading after this many tar headers (including pax/GNU metadata). */
+/** Stop reading after this many real tar members (pax/GNU metadata headers do not count). */
 export const TAR_ENTRY_CAP = 20_000;
 
 function readOctal(buf: Buffer, start: number, len: number): number {
@@ -153,12 +153,6 @@ function resolveName(
   return prefix ? `${prefix}/${nameRaw}` : nameRaw;
 }
 
-function resolveLink(linkRaw: string, pax: Record<string, string>, gnuLongLink: string | null): string {
-  if (pax.linkpath) return pax.linkpath;
-  if (gnuLongLink) return gnuLongLink;
-  return linkRaw;
-}
-
 function countReason(n: number, one: string, many: string): string | null {
   if (n === 1) return one;
   if (n > 1) return many.replace("%d", String(n));
@@ -181,36 +175,35 @@ export function unpackTar(data: Buffer): UnpackResult {
   let skippedHardlinks = 0;
   let entryCapHit = false;
   let offset = 0;
-  let headers = 0;
+  let realEntries = 0;
   let globalPax: Record<string, string> = {};
   let nextPax: Record<string, string> = {};
   let nextLongName: string | null = null;
-  let nextLongLink: string | null = null;
 
-  const takeOverrides = (): { pax: Record<string, string>; longName: string | null; longLink: string | null } => {
+  const takeOverrides = (): { pax: Record<string, string>; longName: string | null } => {
     const pax = { ...globalPax, ...nextPax };
     const longName = nextLongName;
-    const longLink = nextLongLink;
     nextPax = {};
     nextLongName = null;
-    nextLongLink = null;
-    return { pax, longName, longLink };
+    return { pax, longName };
   };
 
   while (offset + BLOCK <= data.length) {
     if (isZeroBlock(data, offset)) break;
-    headers += 1;
-    if (headers > TAR_ENTRY_CAP) {
-      entryCapHit = true;
-      break;
-    }
     const header = data.subarray(offset, offset + BLOCK);
+    const type = String.fromCharCode(header[156] ?? 0);
+    const isMetadata = type === "g" || type === "x" || type === "X" || type === "L" || type === "K";
+    if (!isMetadata) {
+      realEntries += 1;
+      if (realEntries > TAR_ENTRY_CAP) {
+        entryCapHit = true;
+        break;
+      }
+    }
     offset += BLOCK;
     const size = readOctal(header, 124, 12);
-    const type = String.fromCharCode(header[156] ?? 0);
     const prefix = readCString(header, 345, 155);
     const nameRaw = readCString(header, 0, 100);
-    const linkRaw = readCString(header, 157, 100);
     if (size < 0 || offset + size > data.length) {
       reasons.push("truncated tar");
       break;
@@ -232,15 +225,11 @@ export function unpackTar(data: Buffer): UnpackResult {
       continue;
     }
     if (type === "K") {
-      nextLongLink = nulTerminated(content);
       continue;
     }
 
     const ov = takeOverrides();
     const name = resolveName(nameRaw, prefix, ov.pax, ov.longName);
-    // linkpath is applied so a pax/GNU long link target is not lost if we later emit it.
-    const _linkpath = resolveLink(linkRaw, ov.pax, ov.longLink);
-    void _linkpath;
 
     if (type === "5") continue;
     if (type === "1") {

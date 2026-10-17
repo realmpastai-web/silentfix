@@ -29,9 +29,37 @@ function tempDir(): string {
 
 function tarCreate(dir: string, format: "pax" | "gnu" | "ustar", rel = "package"): Buffer {
   const tgz = join(dir, `${format}.tgz`);
-  const r = spawnSync("tar", ["--format", format, "-czf", tgz, "-C", dir, rel], { encoding: "utf8" });
+  const r = spawnSync("tar", ["--format", format, "--sort=name", "-czf", tgz, "-C", dir, rel], {
+    encoding: "utf8",
+  });
   expect(r.status, r.stderr).toBe(0);
   return readFileSync(tgz);
+}
+
+const BLOCK = 512;
+
+function writeOctal(buf: Buffer, start: number, len: number, value: number): void {
+  const s = value.toString(8).padStart(len - 1, "0") + "\0";
+  buf.write(s, start, len, "utf8");
+}
+
+/** Minimal ustar header for tests that need pax/GNU metadata members. */
+function ustarHeader(name: string, size: number, type: string): Buffer {
+  const buf = Buffer.alloc(BLOCK, 0);
+  Buffer.from(name, "utf8").copy(buf, 0);
+  writeOctal(buf, 100, 8, 0o644);
+  writeOctal(buf, 108, 8, 0);
+  writeOctal(buf, 116, 8, 0);
+  writeOctal(buf, 124, 12, size);
+  writeOctal(buf, 136, 12, 0);
+  buf.fill(0x20, 148, 156);
+  buf.write(type, 156, 1, "utf8");
+  buf.write("ustar\0", 257, 6, "utf8");
+  buf.write("00", 263, 2, "utf8");
+  let sum = 0;
+  for (let i = 0; i < BLOCK; i += 1) sum += buf[i]!;
+  buf.write(sum.toString(8).padStart(6, "0") + "\0 ", 148, 8, "utf8");
+  return buf;
 }
 
 async function gzipZeros(bytes: number): Promise<Buffer> {
@@ -120,7 +148,11 @@ describe("unpackTar links and entry cap", () => {
     expect(result.skippedSymlinks).toBe(1);
     expect(result.incomplete).toBe(true);
     expect(result.reasons).toEqual(expect.arrayContaining(["skipped 1 symlink", "skipped 1 hard link"]));
-    expect(result.entries.map((e) => e.name).sort()).toEqual(["a.js"]);
+    // GNU tar stores the first hard-linked name as a regular file; --sort=name
+    // makes that a.js, but assert by count so a directory-order swap cannot flake.
+    expect(result.entries).toHaveLength(1);
+    expect(["a.js", "b.js"]).toContain(result.entries[0]!.name);
+    expect(result.entries[0]!.content.toString()).toBe("hello\n");
   });
 
   it("caps at 20,000 entries and reports incomplete", () => {
@@ -133,6 +165,19 @@ describe("unpackTar links and entry cap", () => {
     expect(result.entries.length).toBe(TAR_ENTRY_CAP);
     expect(result.incomplete).toBe(true);
     expect(result.reasons.some((r) => r.includes("tar entry cap (20000)"))).toBe(true);
+  }, 60_000);
+
+  it("does not count pax/GNU metadata headers toward the entry cap", () => {
+    const x = ustarHeader("./PaxHeaders", 0, "x");
+    const gnuL = ustarHeader("././@LongLink", 0, "L");
+    const g = ustarHeader("./PaxHeaders.g", 0, "g");
+    const metas = Array.from({ length: TAR_ENTRY_CAP }, (_, i) => (i % 3 === 0 ? g : i % 3 === 1 ? gnuL : x));
+    const body = packTar([{ name: "package/kept.js", content: Buffer.from("ok\n") }]);
+    const result = unpackTar(Buffer.concat([...metas, body]));
+    expect(result.entries.map((e) => e.name)).toEqual(["kept.js"]);
+    expect(result.entries[0]!.content.toString()).toBe("ok\n");
+    expect(result.reasons.some((r) => r.includes("tar entry cap"))).toBe(false);
+    expect(result.incomplete).toBe(false);
   }, 60_000);
 });
 
