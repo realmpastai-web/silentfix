@@ -20,6 +20,8 @@ Options:
   --markdown               Print a Markdown table on stdout.
   --advisories-file <path> Use a local GitHub Advisory JSON list (tests/fixtures).
   --no-advisories          Skip advisory lookup.
+  --fail-on-candidate      Exit 2 if any release is a silent-fix candidate
+                           (report is still printed; for CI gates).
   -h, --help               Show this help.
   -V, --version            Show version.
 
@@ -55,6 +57,7 @@ export function parseArgs(argv: string[]): CliOptions {
     json: false,
     markdown: false,
     noAdvisories: false,
+    failOnCandidate: false,
     help: false,
     version: false,
   };
@@ -68,6 +71,7 @@ export function parseArgs(argv: string[]): CliOptions {
     else if (a === "--offline") opts.offline = true;
     else if (a === "--include-prerelease") opts.includePrerelease = true;
     else if (a === "--no-advisories") opts.noAdvisories = true;
+    else if (a === "--fail-on-candidate") opts.failOnCandidate = true;
     else if (a === "--last" || a.startsWith("--last=")) {
       const { value, next } = takeValue(argv, i, "--last");
       opts.last = parseLast(value);

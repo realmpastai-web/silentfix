@@ -16,6 +16,7 @@ export interface CliOptions {
   markdown: boolean;
   advisoriesFile?: string;
   noAdvisories: boolean;
+  failOnCandidate: boolean;
   help: boolean;
   version: boolean;
 }

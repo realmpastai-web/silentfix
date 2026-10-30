@@ -60,6 +60,13 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     if (opts.json) process.stdout.write(formatJson(analysis));
     else if (opts.markdown) process.stdout.write(formatMarkdown(analysis));
     else process.stdout.write(`${formatTerminal(analysis)}\n`);
+    if (opts.failOnCandidate) {
+      const hits = analysis.releases.filter((r) => r.advisoryStatus === "silent-fix candidate");
+      if (hits.length > 0) {
+        log(`silentfix: ${hits.length} silent-fix candidate(s): ${hits.map((r) => r.version).join(", ")}`);
+        return 2;
+      }
+    }
     return 0;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
