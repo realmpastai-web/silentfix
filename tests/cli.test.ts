@@ -82,4 +82,31 @@ describe("CLI", () => {
     expect(r.code).toBe(1);
     expect(r.stderr).toMatch(/offline/);
   });
+
+  it("--fail-on-candidate exits 2 when a silent-fix candidate is found", async () => {
+    const cacheDir = tempCache();
+    caches.push(cacheDir);
+    seedSyntheticCache(cacheDir);
+    const base = ["synthfix", "--offline", "--cache-dir", cacheDir, "--json", "--last", "5"];
+    const none = fixture("synthetic", "advisories-none.json");
+    const gated = await captureMain([...base, "--advisories-file", none, "--fail-on-candidate"]);
+    expect(gated.code).toBe(2);
+    expect(gated.stderr).toMatch(/2 silent-fix candidate\(s\): 1\.1\.1, 1\.2\.1/);
+    expect(JSON.parse(gated.stdout).releases[0].version).toBe("1.1.1");
+    const ungated = await captureMain([...base, "--advisories-file", none]);
+    expect(ungated.code).toBe(0);
+    const fixed = await captureMain([
+      ...base,
+      "--advisories-file",
+      fixture("synthetic", "advisories-fix.json"),
+      "--fail-on-candidate",
+    ]);
+    expect(fixed.code).toBe(2);
+    expect(fixed.stderr).toMatch(/1 silent-fix candidate\(s\): 1\.2\.1\n/);
+    // low-history windows (<5 pairs) disable candidates, so the gate passes
+    const short = await captureMain([
+      "synthfix", "--offline", "--cache-dir", cacheDir, "--no-advisories", "--last", "2", "--fail-on-candidate",
+    ]);
+    expect(short.code).toBe(0);
+  });
 });

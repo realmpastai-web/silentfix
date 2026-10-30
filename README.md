@@ -49,6 +49,7 @@ silentfix openclaw --last 20 --markdown
 | `--json` / `--markdown` | Machine / shareable output (stdout) |
 | `--advisories-file <path>` | Local GHSA JSON (tests) |
 | `--no-advisories` | Skip advisory lookup |
+| `--fail-on-candidate` | Exit `2` if any release is a silent-fix candidate (report still printed) |
 
 Progress goes to **stderr**. Tables/JSON/Markdown go to **stdout**. If `GITHUB_TOKEN` is set it is used for the Advisory API and never printed.
 
